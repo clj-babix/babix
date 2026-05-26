@@ -9,8 +9,8 @@ This repository currently contains the **design artifacts** for Babix. We are in
 ### Core Design Documents
 
 - [VISION.md](VISION.md) — The "why" and long-term ambition
-- [DESIGN.md](DESIGN.md) — High-level architecture and key decisions
-- [PRD.md](PRD.md) — Product requirements and scope (draft)
+- [docs/DESIGN.md](DESIGN.md) — High-level architecture and key decisions
+- [docs/PRD.md](PRD.md) — Product requirements and scope (draft)
 
 ### Detailed Interface Specifications
 
@@ -20,10 +20,6 @@ This repository currently contains the **design artifacts** for Babix. We are in
   - Realization
   - Input Locking & Resolution
   - Environment Presentation
-
-## Historical Material
-
-The `research/` directory contains the original raw vision notes and extended discussion that led to the current design. These are preserved for context but are no longer normative.
 
 ## Philosophy (in brief)
 
@@ -48,11 +44,10 @@ We welcome thoughtful review and discussion from people who care deeply about re
 .
 ├── README.md
 ├── VISION.md
-├── DESIGN.md
-├── PRD.md
-├── docs/
-│   └── interfaces/
-└── research/          # Historical raw material
+└── docs/
+     ├── interfaces/
+     ├── DESIGN.md
+     └── PRD.md
 ```
 
 ---
