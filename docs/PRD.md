@@ -6,7 +6,7 @@
 **Related Documents:**
 - [VISION.md](../VISION.md)
 - [DESIGN.md](../DESIGN.md)
-- `design/interfaces/` (core contracts)
+- `docs/interfaces/` (core contracts)
 
 ---
 
@@ -69,17 +69,26 @@ Wants to use a powerful reproducible tool without having to deeply learn a new l
 - Must explicitly declare:
   - Inputs (categorized as `:build-inputs`, `:host-inputs`, `:propagated-host-inputs`)
   - Sources (with explicit source modes)
-  - Builder (via namespaced keyword resolved from input graph)
+  - Builder (an ordinary package supplied as one of the specification inputs under `:inputs`; referenced by keyword inside the derivation). The core must not know language build conventions or phase models.
   - Activator (optional, via namespaced keyword)
   - Sandbox requirements
   - Runtime environment expectations
+- **Specification inputs vs. categorized inputs** are deliberately distinct. Specification inputs (the `:inputs` map) form the closed scope of concrete package instances available to the derivation. Categorized inputs describe architectural and runtime roles within that scope.
+- **In-place materialization with stable identifiers before hashing**: A full static walk discovers all references (including inside strings and builder-private data). Before the derivation hash is computed, every reference is replaced *in-place* with a stable identifier (a small map preserving the original logical name plus the derivation hash or store identity). Authoring forms may use convenient names and whole namespaces; the locked form is fully explicit and self-contained.
+- **Two-layer hashing**: Derivation hash (over the normalized description plus locked input identities) identifies the plan and determines promised output paths. Output hash (content hash of bytes written to a promised location) identifies the actual result. Fixed-output steps (source fetches, vendored trees, etc.) are explicit derivations carrying a declared expected content hash.
+- **Single primary output with FHS-style layout**: Derivations declare one primary `out` (plus logical siblings only when genuinely required). Inside `out` the package follows a conventional FHS-like layout. Composition across packages into roots or environments happens at activation time.
 - Higher-level language builders (Cargo, Python, etc.) are packages that produce valid derivations.
 - Stdenv-like conventions, if any, are packages, not core concepts.
+- Multi-step workflows (source fetch with expected hash → dependency fetch → build) can be expressed as small graphs of ordinary derivations that may live together in one authoring file for convenience. The locked forms are independent and fully explicit. Authoring sugar (local names, whole namespaces, compact forms) must expand to fully explicit, identifier-pinned descriptions before locking and hashing.
 
 ### 4.2 Builders as Packages
-- Builder logic is supplied by packages, not special-cased in the core.
-- Discovery via namespaced keywords (`:babix.builders/python`) resolved against the derivation's input graph.
-- Builder packages evolve on their own cadence.
+- Builder logic is supplied by ordinary packages, not special-cased in the core.
+- A derivation receives its builder (and any other builder-like packages it needs) explicitly as specification inputs under `:inputs`.
+- The derivation references the desired builder by keyword into that closed input set.
+- Builder packages evolve on their own cadence. There is no central registry or `providers.edn`-style discovery; the referencing derivation simply lists the specific builder package instance it wants to use.
+- **Sandbox preparation is a distinct pre-builder step.** Realization first ensures a hermetic view with promised stable output paths (via a sandbox preparation package or backend). Only then is the chosen builder package invoked inside that prepared environment. Detailed sandbox policy and conventional environment setup (PATH, wrappers, etc.) are supplied primarily by the builder package or its dependencies.
+
+No builder is required to inherit from a privileged parent or generic builder. There is no privileged `genericBuild`, phase runner, or hook system in the core. All phase models, hook systems, and language-specific conventions live in the package collection. The core must not know Cargo, setuptools, npm, CMake, Autotools, Python paths, or similar details. It must not source hooks or understand phase models. A generic phased builder may exist as an ordinary package that other builders can depend on, but it has no special status.
 
 ### 4.3 Activators as Packages
 - Activation behavior (root layout, activation script, environment contributions) is supplied by activator packages.
@@ -98,9 +107,10 @@ Wants to use a powerful reproducible tool without having to deeply learn a new l
 - Realization is the only way to write to the store.
 
 ### 4.6 Environment Presentation & Activation
-- Any derivation can be activated.
-- Activation produces a root + activation mechanism.
-- `develop` / `run` / profile-style targets are expressed as derivations using activators.
+- Activation is a first-class concern on *every* derivation, not a special case.
+- Activation behavior is supplied by activator packages (parallel to builders). A derivation may declare zero or one activator, resolved by keyword into its specification inputs.
+- Collector derivations (home-style roots, project environments, etc.) are ordinary derivations that compose activations from their inputs. They have the same shape and are not a separate core kind.
+- `develop` / `run` / profile-style targets are expressed as derivations using activators. Large roots can remain lazy at the graph level; per-derivation closure is required only for the derivations that are actually realized.
 
 ### 4.7 Explainability & Provenance
 - Every important decision and transformation must be traceable.
@@ -133,7 +143,7 @@ Project-specific workflows belong in `bb.edn` (not part of Babix core commands).
 
 ## 6. Architecture Alignment
 
-See [DESIGN.md](../DESIGN.md) and the five core interface documents in `design/interfaces/`:
+See [DESIGN.md](../DESIGN.md), [CONTEXT.md](../CONTEXT.md) (the authoritative glossary and distilled decisions), and the five core interface documents in `docs/interfaces/`:
 
 1. Derivation Description Interface
 2. Store Interface
@@ -146,19 +156,26 @@ See [DESIGN.md](../DESIGN.md) and the five core interface documents in `design/i
 - Tiny standard library = stable pure helpers
 - Package collection = builders, activators, language support, stdenv-like constructs, higher-level frameworks
 
+The core mechanisms (in-place stable identifier materialization before hashing, specification inputs vs. categorized inputs, two-layer hashing, sandbox preparation as a distinct step, single primary `out` with FHS layout, ordinary collectors, and unified small data-driven contracts for pluggable capabilities) are first-class architectural commitments. See DESIGN.md for the current detailed stance.
+
 ---
 
-## 7. Known Open Questions & Risks (to be explored in subsequent grill sessions)
+## 7. Known Open Questions & Risks
 
-- Concrete shape and ergonomics of the project configuration file(s) (`babix init` output, target declarations, environment definitions).
-- Bootstrap story for the first working Babix binary + initial package collection.
-- Exact depth and guarantees required for `babix explain`.
-- Detailed CLI surface and target declaration syntax.
-- Trust model for locked inputs and pre-built artifacts (even minimal version).
-- Precise contract and composition rules for activator packages (especially collectors).
-- How builder-provided default activators interact with explicit overrides.
-- Performance characteristics of evaluation and realization for large graphs.
+The per-interface grill sessions have been conducted. The major mechanisms (in-place stable identifier materialization, specification vs. categorized inputs, two-layer hashing, sandbox preparation separation, single primary output, ordinary collectors, unified pluggable contracts, and the absence of any privileged genericBuild or hook system in the core) are now recorded in DESIGN.md, CONTEXT.md, and the interface specifications.
+
+Remaining higher-level open questions and risks (largely corresponding to the U* items from the design sessions):
+
+- Concrete shape and ergonomics of the project configuration file(s) (`babix init` output, target declarations, environment definitions) and the local authoring surface.
+- Bootstrap story for the first working Babix binary + initial package collection, and eventual self-hosting.
+- Exact depth, question catalog, and data requirements for `babix explain`.
+- Detailed CLI surface, command semantics, and target declaration syntax.
+- Trust and distribution model for locked inputs and pre-built artifacts (even a minimal local-first story).
+- Precise contract, privilege declarations, and composition rules for activator packages (especially collectors and large roots).
+- How builder-provided defaults (sandbox policy, output conventions, environment setup) interact with explicit declarations and overrides in individual derivations.
+- Performance characteristics of evaluation and realization for large graphs (laziness at collector/root level vs. per-derivation closure) and the exact algorithms for materialization.
 - Documentation and onboarding story that delivers on "users learn Babix, not Clojure."
+- Store path naming, identifier formats, and exact builder/sandbox/activator invocation manifest shapes.
 
 ---
 

@@ -33,10 +33,11 @@ It is the Babix equivalent of `flake.nix` + `flake.lock` + the fetching mechanis
 
 ## Relationship to Other Interfaces
 
-- **Derivation Description**: Sources and input derivations are declared here.
+- **Derivation Description**: Sources and input derivations are declared here. All references are materialized in-place with stable identifiers before the derivation hash is computed.
 - **Store**: Resolved sources usually end up as store paths.
 - **Realization**: Uses the resolved inputs.
 - **Environment Presentation**: User environments can also declare inputs (for `develop`).
+- **Provenance**: Lock records (including reproducibility level and dirty state) are essential for `babix explain`.
 
 ## Scope Note
 

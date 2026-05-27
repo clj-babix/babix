@@ -9,17 +9,28 @@ The Realization Interface is the contract between "I have a description of what 
 
 This is where sandboxing, hermeticity, and reproducibility are actually enforced. It is the primary pluggable point for different isolation mechanisms (landlock, bubblewrap, user namespaces, future mechanisms, OS-specific jails, etc.).
 
+The core orchestrates a clear sequence:
+1. Sandbox preparation package (or backend) is invoked first to create the hermetic view with promised stable output paths visible.
+2. The actual builder package (named via `:builder`) is then executed inside that prepared environment.
+
+All build logic, phase models, and conventional environment setup live in the builder package (or packages it depends on), not in the core or the sandbox preparation layer.
+
 ## Core Responsibilities
 
 - Take a Derivation Description + resolved inputs.
-- Execute the builder inside a controlled, minimal environment.
-- Produce outputs that match the declared store paths (or fail atomically).
+- Invoke the chosen sandbox preparation package (if any) or a suitable realization backend to create a hermetic, isolated environment that satisfies the derivation's `:sandbox` requirements. This step prepares stable absolute paths for all declared outputs (the equivalents of `$out`, `$man`, etc.) so the build process sees them as immutable destinations from the start.
+- Execute the builder (the package named via `:builder`) inside that prepared sandbox.
+- Capture the contents written to the promised output locations.
+- Register the results in the Store under content-addressed, immutable paths (a derivation hash capturing the description + all inputs, plus an output hash for the actual result).
 - Record enough information for provenance and reproducibility verification.
+
+The build is intended to behave like a pure function: same locked inputs + same derivation description + same sandbox policy must produce bit-identical results. Side effects are confined to the prepared sandbox.
 
 ## Key Requirements
 
 - **Sandboxed by default**: The builder must not have uncontrolled access to the host filesystem, network, or other processes unless explicitly declared in the derivation.
 - **Hermetic inputs**: Only the inputs declared in the derivation description may be visible to the build (modulo what the sandbox mechanism itself provides).
+- **Stable output paths ("$out" convention)**: The sandbox preparation step must make the final immutable output locations visible to the builder process as stable absolute paths before the builder runs. The builder writes its results into these promised locations (classically via an environment variable `$out` and similar for other outputs). Nothing outside the sandbox may mutate them afterward.
 - **Deterministic output**: For the same inputs + same builder logic + same sandbox policy, the output should be bit-for-bit identical (or we must be able to explain why it is not).
 - **Observable & explainable**: Realization must produce structured records that feed the provenance/explainability system.
 
@@ -36,18 +47,19 @@ The interface must allow the derivation to declare its minimum requirements and 
 
 ## Open Questions
 
-- What is the exact protocol for invoking a builder? (executable + args + environment map + working directory + output path promises?)
+- What is the exact protocol for invoking the sandbox preparation step and then the builder? (How are promised output paths communicated? What does the sandbox package receive vs. what the builder receives?)
 - How do we handle "impure" but declared escape hatches (network access for some fetchers, specific devices, etc.) without weakening the whole model?
-- How much of the "environment setup" (PATH, library paths, etc.) happens inside the sandbox vs. being prepared by the realization layer before entering the sandbox?
-- Can realization backends be mixed in one store (some derivations realized with strong sandbox, others with a faster trusted path)?
+- How much of the "environment setup" (PATH, library paths, wrappers, etc.) is the responsibility of the builder package versus any supporting setup packages it depends on?
+- Can realization backends (different sandbox mechanisms) be mixed in one store (some derivations realized with strong sandbox, others with a faster trusted path)?
 - What happens when no available backend satisfies the derivation's sandbox requirements?
+- How are "fixed-output" style derivations (e.g., source downloads whose content hash is known in advance) represented so they participate cleanly in the two-layer hashing (derivation hash + output hash) while remaining cacheable?
 
 ## Relationship to Other Interfaces
 
-- **Derivation Description**: Primary input (especially the `:builder` and `:sandbox` sections).
-- **Store**: Only successful realization writes to the store.
-- **Input Locking**: Resolved inputs are presented to the sandbox.
-- **Provenance**: Realization is the moment when most provenance data is generated.
+- **Derivation Description**: Primary input (especially the `:builder` and `:sandbox` sections). Sandbox preparation (creating the hermetic view and promised output paths) occurs before the builder is invoked; detailed policy lives with the builder package.
+- **Store**: Only successful realization writes to the store. Uses two-layer hashing (derivation hash identifies the plan and promised paths; output hash identifies the actual result).
+- **Input Locking**: Resolved inputs are presented to the sandbox. All references have already been materialized in-place with stable identifiers.
+- **Provenance**: Realization is the moment when most provenance data is generated. Records must capture which sandbox preparation package/backend and which builder package were used.
 
 ## Current Scope Limitation
 
@@ -55,4 +67,4 @@ For the initial focus, we do not need remote or distributed realization. Local s
 
 ---
 
-This interface is where the "remove the cruft while keeping the hard guarantees" battle is largely won or lost. The design of the builder invocation contract and the sandbox policy language will heavily influence how painful or pleasant it is to write and maintain packages.
+This interface is where the "remove the cruft while keeping the hard guarantees" battle is largely won or lost. The design of the handoff between core, sandbox preparation package, and builder package — plus the data-driven contracts for invocation and output capture — will determine how much accidental complexity leaks into the daily experience of using the system.

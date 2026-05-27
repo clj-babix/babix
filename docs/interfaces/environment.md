@@ -7,6 +7,8 @@
 
 This interface defines how artifacts that exist in the store (outputs of derivations) are turned into usable, runnable environments for development, testing, running commands, or long-lived user environments.
 
+Activation is a first-class concern on *every* derivation, not a special case. A derivation may declare zero or one activator (referenced by keyword into its specification inputs and resolved the same way as builders). Collector-style targets (home-like roots, project environments, etc.) are ordinary derivations whose primary purpose is to aggregate other derivations and compose activations from their inputs.
+
 It is the reason `babix develop`, `babix run`, and `babix switch` (for non-system targets) can exist.
 
 ## Core Responsibilities
@@ -15,6 +17,7 @@ It is the reason `babix develop`, `babix run`, and `babix switch` (for non-syste
 - Materialize that environment so that processes can be launched inside it (setting PATH, library paths, environment variables, wrappers, etc.).
 - Support different "activation" styles: temporary shell, persistent profile, one-shot command execution, etc.
 - Record enough information for provenance (`babix explain` on an active environment).
+- Activation packages declare their own privilege requirements (home-level, system-level, dev-shell, etc.). The core does not hardcode privilege rules.
 
 ## Key Tensions to Resolve in This Interface
 
@@ -32,14 +35,17 @@ It is the reason `babix develop`, `babix run`, and `babix switch` (for non-syste
 
 ## Relationship to Other Interfaces
 
-- **Derivation Description**: Derivations can declare expectations about their runtime environment.
+- **Derivation Description**: Derivations can declare expectations about their runtime environment. Every derivation may name an activator (or none). Collectors are ordinary derivations.
 - **Store**: Environments are almost always roots or references into store paths.
 - **Realization**: The outputs that environments consume come from realization.
 - **Input Locking**: Environments can have their own locked inputs.
+- **Provenance**: Which activator (if any) was used, and with which inputs, must be traceable through realization records and store metadata.
 
 ## Scope Note (Current Focus)
 
 For the initial phase we are primarily concerned with development and user-level environments. System-level activation (the equivalent of `nixos-rebuild switch` or `darwin-rebuild`) is explicitly out of scope for now, but the interface should not make it impossible or require a total redesign later.
+
+See `docs/CONTEXT.md` (Key Decisions and Key Concepts) for the current stance on activation as universal, activator packages, collectors as ordinary derivations, and the distinction between root construction and live mutation.
 
 ---
 

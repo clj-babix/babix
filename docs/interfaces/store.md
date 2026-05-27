@@ -42,13 +42,27 @@ For the current focus (nix-develop-like + derivations + locking):
 - How much of the "generation" concept lives in the Store vs. the Environment Presentation layer?
 - Trust model: how do we validate that a store path really was built from the claimed inputs when it comes from a remote source?
 
+### Two-Layer Hashing Model (captured from design sessions)
+
+Store paths use two distinct hashes for clarity and caching:
+
+- **Derivation hash**: A deterministic hash over the normalized Derivation Description + the hashes/identities of all its locked specification inputs and sources. This identifies the *plan* to produce something. Any change to the description or any input produces a new derivation hash (and thus new output paths).
+
+- **Output hash**: The content hash of the actual bytes written to a particular promised output location during realization. This is what ends up in the final immutable store path for that output.
+
+Fixed-output derivations (sources, vendored dependency trees, etc.) carry a pre-declared expected content hash. Their output hash can be that declared hash. They participate in the derivation hash of anything that consumes them, while still being independently cacheable by content.
+
+The sandbox preparation step makes the final store paths (derived from derivation hash + output name) visible as stable absolute paths before the builder runs. The builder writes into them; the Store later registers the contents under the output-hash-based name (or re-uses the path if it matches).
+
+This supports the reproducibility pillar and Spec-ulation-style stability: output paths are knowable and stable once the locked inputs + description exist.
+
 ## Relationship to Other Interfaces
 
-- **Derivation Description**: Derivations compute the store paths they will produce.
-- **Realization**: Realization is the only operation that is allowed to write into the store (under strict controls).
+- **Derivation Description**: Derivations compute the store paths they will produce (via two-layer hashing: derivation hash for the plan, output hash for the result). Promised paths are known before realization.
+- **Realization**: Realization is the only operation that is allowed to write into the store (under strict controls). Sandbox preparation happens first; the builder writes into promised paths inside the prepared environment.
 - **Input Locking & Resolution**: Resolved inputs are materialized into the store.
 - **Environment Presentation**: Environments are built by creating roots into specific store paths or sets of paths.
-- **Provenance**: The store + realization records are the ground truth for explainability.
+- **Provenance**: The store + realization records are the ground truth for explainability. All references in a locked derivation are already pinned to stable identifiers.
 
 ## Non-Goals (Current Scope)
 
