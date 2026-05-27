@@ -1,7 +1,7 @@
 # Babix Product Requirements Document (Draft)
 
 **Status:** Draft v0.1 — intended for internal iteration and RFC  
-**Date:** 2025  
+**Date:** 2026
 **Audience:** Nix-using Clojurians and early design reviewers  
 **Related Documents:**
 - [VISION.md](../VISION.md)
