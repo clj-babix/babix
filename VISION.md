@@ -49,6 +49,16 @@ A package, a build plan, a development environment, and a lockfile should primar
 
 Babix should feel like the tool you reach for when you want a development environment you can trust, explain, and reproduce — without requiring you to learn a new programming language or accept hidden complexity as the price of reproducibility.
 
+## References, Identifiers, and Surfaces
+
+Babix maintains a deliberate separation between the surfaces humans use to describe and reason about systems and the internal representations required for correctness and reproducibility.
+
+Humans work effectively with references — short, contextual names that are easy to remember, discuss, and evolve. Authoring descriptions, project configuration, and day-to-day mental models live in this reference-oriented layer. People are not good at managing long, opaque identifiers at scale; they are good at reasoning with names that carry local meaning.
+
+Once a description is locked, references are resolved and replaced in place with stable identifiers. The resulting locked forms are fully explicit, self-contained data structures. Their primary consumers are programs: the evaluator, the hasher, the realization layer, provenance tools, and other machines that must make reliable, reproducible decisions across time and contexts. This separation — ergonomic references for humans, durable identifiers for machines — is not a compromise. It is the mechanism that lets Babix deliver both excellent local ergonomics and strong guarantees without forcing either side to do the other's job.
+
+Data remains the primary medium throughout. The difference is which layer is allowed to stay in the reference form and which layer must commit to identifiers.
+
 ## Guiding Principles
 
 - **Data first, functions when needed, macros last.** The lowest useful representation is structured data (EDN). Functions are the tool for transformation and abstraction. Hidden magic is a bug.
