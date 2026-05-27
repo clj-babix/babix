@@ -9,8 +9,8 @@ This repository currently contains the **design artifacts** for Babix. We are in
 ### Core Design Documents
 
 - [VISION.md](VISION.md) — The "why" and long-term ambition
-- [docs/DESIGN.md](DESIGN.md) — High-level architecture and key decisions
-- [docs/PRD.md](PRD.md) — Product requirements and scope (draft)
+- [docs/DESIGN.md](docs/DESIGN.md) — High-level architecture and key decisions
+- [docs/PRD.md](docs/PRD.md) — Product requirements and scope (draft)
 
 ### Detailed Interface Specifications
 
