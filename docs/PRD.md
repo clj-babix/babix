@@ -5,7 +5,7 @@
 **Audience:** Nix-using Clojurians and early design reviewers  
 **Related Documents:**
 - [VISION.md](../VISION.md)
-- [DESIGN.md](../DESIGN.md)
+- [DESIGN.md](DESIGN.md)
 - `docs/interfaces/` (core contracts)
 
 ---
