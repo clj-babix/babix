@@ -116,6 +116,51 @@ These interfaces are the primary architectural boundaries. See the individual do
 
 **Unified small data-driven contracts** govern all pluggable capabilities the core invokes directly (builders, sandbox/isolator providers, activators). Each publishes a minimal static manifest (kind, namespace/name, entrypoint, contract version) plus a small per-kind payload. This keeps the core's invocation model tiny and uniform while allowing the package collection to evolve new capabilities without core changes.
 
+### Detailed Decisions and Rationale from Design Sessions
+
+The following records the substantive decisions and rationale that emerged from the interface grill sessions. They are presented here at full fidelity as the permanent home for this architectural record (no separate ADR folder was created). They expand on the high-level mechanisms listed above.
+
+**Builders and activators are ordinary packages supplied as specification inputs** under the `:inputs` map of a Derivation Description. The `:builder` (or `:activator`) field is a keyword reference *into* that closed set. There is no separate global registry or `providers.edn`-style discovery mechanism.
+
+**Specification Inputs vs. Categorized Inputs** are deliberately distinct. The former is the closed scope passed to the derivation; the latter describes roles within the build. Logical package names under `:inputs` do not include versions (except deliberate parallel cases such as python313 alongside python311). Versions live in the concrete resolved value, not the key.
+
+**A file may contain multiple derivation descriptions** for authoring convenience (e.g., source-fetch → deps-fetch → build). These are treated as virtually separate descriptions. References between them are plain keywords with local-first lookup (file-local derivations first, then the package collection). At locking time they resolve to independent, stable, hashable descriptions.
+
+**In-place materialization before hashing**: A full static walk over the entire Derivation Description discovers references (even inside strings or builder-private data). All discovered references are replaced *in-place* with stable identifiers *before* the derivation hash is computed. The locked form must be fully explicit and self-contained.
+
+**Stable Identifier shape**: The recommended form is a small map that preserves the original reference name for readability and to keep surrounding structure intact:
+
+  ```clojure
+  {:name "my-package-source"
+   :derivation-hash "sha256-..."}
+  ```
+  This follows Spec-ulation principles: references are pinned to stable identifiers while the data shape remains stable.
+
+**Sandbox preparation is a distinct pre-builder step**: The core invokes a sandbox preparation package (or backend) *before* the actual builder. The builder receives an already-prepared hermetic environment with promised stable output paths. Sandbox policy and output conventions are primarily supplied by the builder package (or a parent it extends), not repeated in every derivation.
+
+**Two-layer hashing**: Derivation hash (plan + inputs) vs. output hash (result). Promised paths are known before the builder runs.
+
+**Single primary output**: Derivations use one primary `out` (FHS layout inside). Composition across packages happens at activation/root time.
+
+**No centralized build monolith**: There is no privileged `genericBuild` / phase runner / hook system in the core. All such logic lives in ordinary builder packages.
+
+**Unified small contracts for pluggables**: Builders, sandbox/isolator providers, and activators present small, stable, data-driven manifests (common envelope + per-kind payload) so the core can invoke them uniformly.
+
+**Full static walk for discovery**: For now, the system walks the entire description to find references (keys, values, strings, blobs). Results are materialized explicitly in the locked form.
+
+**Collectors are ordinary derivations**: No special syntax or core treatment. Large roots/collectors can stay demand-driven. Any specific derivation must have its closed, resolved form before realization.
+
+**Inside the prepared sandbox**, the builder (or its supporting packages) owns conventional environment setup (PATH, etc.). The sandbox preparation layer focuses on isolation and promised paths.
+
+**Materialization before hash**: All reference discovery and replacement must be complete before the derivation hash is computed.
+
+**Builder Architecture Lessons (from prior art)**: Prior systems (notably Nixpkgs `stdenv` + `genericBuild` + its hook system, and Guix build systems) demonstrate that embedding a rich, centralized build model—phases, implicit hook mechanisms, generic runners, setup-hook sourcing, etc.—into the core or a single privileged package produces exactly the accumulated magic, hidden behavior, and maintenance burden that makes these tools painful.
+
+Babix therefore keeps *all* build policy, phase models, hook systems, default build flows, and language-specific conventions strictly as ordinary packages in the collection. A generic phased builder may exist as a convenience that other builders can depend on, but:
+- It has no special status or privileges in the core.
+- Other builders may ignore it entirely and implement their own orchestration from scratch.
+- The core Derivation Description and Realization interfaces remain completely agnostic to any particular build model or convention.
+
 ### The Five Core Interfaces
 
 These interfaces are the primary architectural boundaries. See the individual documents in `docs/interfaces/` for the current contracts. Provenance and explainability requirements apply to all of them.
