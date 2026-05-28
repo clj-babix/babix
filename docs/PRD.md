@@ -75,7 +75,8 @@ Wants to use a powerful reproducible tool without having to deeply learn a new l
   - Runtime environment expectations
 - **Specification inputs vs. categorized inputs** are deliberately distinct. Specification inputs (the `:inputs` map) form the closed scope of concrete package instances available to the derivation. Categorized inputs describe architectural and runtime roles within that scope.
 - **In-place materialization with stable identifiers before hashing**: A full static walk discovers all references (including inside strings and builder-private data). Before the derivation hash is computed, every reference is replaced *in-place* with a stable identifier (a small map preserving the original logical name plus the derivation hash or store identity). Authoring forms may use convenient names and whole namespaces; the locked form is fully explicit and self-contained.
-- **Two-layer hashing**: Derivation hash (over the normalized description plus locked input identities) identifies the plan and determines promised output paths. Output hash (content hash of bytes written to a promised location) identifies the actual result. Fixed-output steps (source fetches, vendored trees, etc.) are explicit derivations carrying a declared expected content hash.
+- **Two-layer hashing**: Derivation hash (over the normalized description plus locked input identities) identifies the plan and determines promised output paths. Output hash (content hash of bytes written to a promised location) identifies the actual result. Source-fetch and vendoring steps are ordinary derivations (not a special fixed-output kind) carrying a declared expected content hash; they receive controlled sandbox privileges for the necessary impurity (network) while keeping the rest of the plan pure. Downstream derivations consume them as normal specification inputs under `:inputs`. This uniform multi-derivation approach is Babix's improvement on the classic escape hatch.
+- **Runtime closure hygiene**: The system must support (via builder/activator packages and reference scanning) the production of tight runtime closures — the actual reachable store paths at runtime, not just declared build inputs. This is required for correct garbage collection, minimal activation, and precise provenance.
 - **Single primary output with FHS-style layout**: Derivations declare one primary `out` (plus logical siblings only when genuinely required). Inside `out` the package follows a conventional FHS-like layout. Composition across packages into roots or environments happens at activation time.
 - Higher-level language builders (Cargo, Python, etc.) are packages that produce valid derivations.
 - Stdenv-like conventions, if any, are packages, not core concepts.
@@ -183,9 +184,12 @@ Remaining higher-level open questions and risks (largely corresponding to the U*
 
 - A developer can create a locked, reproducible development environment for a non-trivial project with clear provenance and low ceremony.
 - Adding or overriding a package feels like editing data with good tooling, not fighting a language.
-- `babix explain` routinely answers questions that are difficult or impossible in current Nix/Guix workflows.
+- `babix explain` routinely answers questions that are difficult or impossible in current Nix/Guix workflows, including "why is this artifact not bitwise identical to the historical build?" with actionable diffoscope-style evidence.
 - The core interfaces are stable enough that higher-level frameworks and custom builders can be developed against them without forking the core.
 - Early reviewers (Nix-using Clojurians) see a coherent, principled system rather than "Nix with different syntax."
+- On the package collection, bitwise reproducibility rates are high (targeting the 85–95%+ range demonstrated achievable at 100k-package scale by functional package management) with explicit tooling and monitoring to diagnose and reduce the remainder. Rebuildability of historical plans remains >99%. 
+
+**Module system horizon note**: The later-horizon goal of "a powerful but simpler module system" has a strong existence proof in the NixOS module system (Dolstra et al., JFP 2011), which provides composable, declarative separation of concerns for full operating-system configuration while remaining inside the purely functional deployment model. Babix modules should learn from that design (laziness for scale, explicit dependencies, no hidden mutation of the module namespace) while avoiding its syntactic and conceptual weight.
 
 ---
 
@@ -199,3 +203,8 @@ Remaining higher-level open questions and risks (largely corresponding to the U*
 ---
 
 *This document is intentionally a living draft. Its purpose is to create a stable enough artifact for review and to surface the remaining design work that must be completed before serious implementation planning.*
+
+**Further reading** (intellectual foundations and empirical grounding for the requirements)
+- Dolstra 2006 (PhD thesis) — the purely functional deployment model, two-layer addressing, fixed-output escape hatch, runtime closure via reference scanning, and roots/generations.
+- Dolstra et al. JFP 2011 — NixOS as existence proof that a purely functional module system can scale to full system configuration while preserving the model.
+- Malka et al. MSR 2025 — 709k+ historical rebuilds showing 69–91% bitwise reproducibility (upward trend) and >99% rebuildability; ~15% of failures from embedded dates; value of full diffoscope datasets for explainability.

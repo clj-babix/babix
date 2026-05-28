@@ -19,6 +19,8 @@ It is the reason `babix develop`, `babix run`, and `babix switch` (for non-syste
 - Record enough information for provenance (`babix explain` on an active environment).
 - Activation packages declare their own privilege requirements (home-level, system-level, dev-shell, etc.). The core does not hardcode privilege rules.
 
+Environments are ultimately backed by *roots* into the store. A root keeps the transitive runtime closure (the actual referenced store paths discovered via reference scanning) alive. Activator packages are responsible for producing a coherent root layout and activation script from the chosen derivation outputs; the Environment Presentation interface orchestrates the creation or switching of the root. This is the mechanism that makes "enter a reproducible development environment" and "switch to a new home profile" atomic, roll-backable, and explainable. See the Store Interface for roots and generations, and the Derivation Description Interface for runtime closure hygiene requirements.
+
 ## Key Tensions to Resolve in This Interface
 
 - How much of the "how binaries find their libraries" problem is solved at environment activation time vs. at build time (rpath, patchelf, wrappers, LD_LIBRARY_PATH, etc.).

@@ -26,6 +26,8 @@ All build logic, phase models, and conventional environment setup live in the bu
 
 The build is intended to behave like a pure function: same locked inputs + same derivation description + same sandbox policy must produce bit-identical results. Side effects are confined to the prepared sandbox.
 
+In practice we distinguish *rebuildability* (re-executing the plan succeeds and produces a usable result) from *bitwise reproducibility* (the bytes are identical). Large-scale empirical studies of functional package managers show rebuildability >99% even when bitwise identity is 69–91%. The sandbox + exact input identities are what deliver the high rebuildability; bitwise identity additionally requires toolchain discipline (SOURCE_DATE_EPOCH, path stripping, deterministic code generation). Realization records must capture enough information for `babix explain` to diagnose the difference.
+
 ## Key Requirements
 
 - **Sandboxed by default**: The builder must not have uncontrolled access to the host filesystem, network, or other processes unless explicitly declared in the derivation.
@@ -33,6 +35,10 @@ The build is intended to behave like a pure function: same locked inputs + same 
 - **Stable output paths ("$out" convention)**: The sandbox preparation step must make the final immutable output locations visible to the builder process as stable absolute paths before the builder runs. The builder writes its results into these promised locations (classically via an environment variable `$out` and similar for other outputs). Nothing outside the sandbox may mutate them afterward.
 - **Deterministic output**: For the same inputs + same builder logic + same sandbox policy, the output should be bit-for-bit identical (or we must be able to explain why it is not).
 - **Observable & explainable**: Realization must produce structured records that feed the provenance/explainability system.
+
+**Controlled impurity for source-fetch steps (the escape hatch)**
+
+Source-fetch (and similar) derivations are the only place where the sandbox deliberately grants impurity (network, non-deterministic clocks, etc.). These are ordinary derivations — not a special "fixed-output" kind — that declare an expected content hash; their sandbox policy (or the builder package they name) permits the necessary escape for that step only. After the fetch step completes, all downstream realization is again pure with respect to the pinned identity. This is the minimal, auditable exception that makes the overall model practical. Babix expresses this uniformly via the multi-derivation graph and per-derivation sandbox policy, rather than via a distinguished derivation variant in the core (an improvement over the classic mechanism described in Dolstra 2006). See the Derivation Description Interface for the data shape and the Store Interface for how these pinned artifacts participate in two-layer hashing.
 
 ## Pluggability Intent
 

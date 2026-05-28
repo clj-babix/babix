@@ -14,6 +14,19 @@ The system has two primary goals that must not be in tension:
 1. Deliver real Nix/Guix-grade guarantees for reproducibility, provenance, and hermeticity.
 2. Make the experience of using those guarantees feel like a well-designed, data-oriented tool rather than a foreign system with accumulated cruft.
 
+### Intellectual Foundations
+
+Babix is not a new invention. It is a deliberate re-imagining of the *purely functional software deployment model* developed by Eelco Dolstra in his 2006 PhD thesis and refined through the Nix and NixOS projects. That model treats software components (and later entire system configurations) as pure functions from declared inputs to immutable, content-addressed outputs. The store path of every artifact embeds a cryptographic hash of *all* inputs that produced it; this single mechanism simultaneously prevents undeclared dependencies, enables side-by-side installation of conflicting versions, guarantees isolation (no "DLL hell"), and makes upgrades atomic and rollbacks trivial (O(1) via roots).
+
+The original motivation was brutally practical: imperative package managers produce incomplete dependency specifications (nominal names rather than exact instances), allow components to interfere through shared mutable state, make upgrades non-atomic (leaving the system in an inconsistent state mid-upgrade), and provide no reliable way to reproduce a configuration or roll back. The functional model eliminates these problems at the architectural level by making the entire static part of a system (packages, configuration files, startup scripts, etc.) the output of pure functions stored under immutable, hashed paths.
+
+Babix inherits this model wholesale — the store, derivations, two-layer hashing (plan vs. result), hermetic realization, and provenance requirements are direct descendants — while replacing the original surface (a lazy functional language whose ergonomics and error messages remain hostile even to experts, plus decades of accumulated wrapper layers) with plain EDN data, small pure functions for transformation, and ordinary packages for all policy and builder logic. The 2025 large-scale empirical study of nixpkgs (709k+ historical package builds across 17 snapshots) provides strong validation: the model delivers 69–91% bitwise reproducibility (with a clear upward trend) and >99% rebuildability at the scale of the largest cross-ecosystem FOSS distribution. Babix's bet is that a data-first surface plus a radically leaner core can preserve (and in some dimensions strengthen) those guarantees while dramatically lowering the activation energy.
+
+Key references:
+- Eelco Dolstra. *The Purely Functional Software Deployment Model*. PhD thesis, Utrecht University, 2006.
+- Eelco Dolstra, Andres Löh, Nicolas Pierron. "NixOS: A Purely Functional Linux Distribution." *Journal of Functional Programming*, 2010/2011.
+- Julien Malka, Stefano Zacchiroli, Théo Zimmermann. "Does Functional Package Management Enable Reproducible Builds at Scale? Yes." *MSR 2025* (arXiv:2501.15919).
+
 ## Architectural Layers
 
 ```
@@ -110,7 +123,7 @@ The locked form is the ground truth for the machine layer — hashing, realizati
 
 **Specification inputs vs. categorized inputs** are deliberately distinct. Specification inputs (under `:inputs`) form the closed scope of concrete package instances available to the derivation. Categorized inputs (`:build-inputs`, `:host-inputs`, `:propagated-host-inputs`) are references into that scope describing architectural and runtime roles. This separation keeps the input graph honest and supports future cross-compilation without collapsing concerns.
 
-**Two-layer hashing** is used throughout: a derivation hash (over the normalized description plus the identities of all locked specification inputs and sources) identifies the plan; an output hash (content hash of the bytes written to a promised location) identifies the actual result. Promised output paths are known before the builder runs. Fixed-output steps (source fetches, vendored dependency trees, etc.) are explicit derivations carrying a declared expected content hash.
+**Two-layer hashing** is used throughout: a derivation hash (over the normalized description plus the identities of all locked specification inputs and sources) identifies the plan; an output hash (content hash of the bytes written to a promised location) identifies the actual result. Promised output paths are known before the builder runs. Source-fetch and vendoring steps are ordinary derivations (not a special "fixed-output" kind) that declare an expected content hash and are granted controlled sandbox privileges. They participate in the graph exactly like any other derivation: downstream derivations receive their outputs as specification inputs under `:inputs`. This uniform multi-derivation approach is Babix's improvement over the classic model's distinguished fixed-output derivation variant.
 
 **Sandbox preparation is a distinct pre-builder step.** The core (or realization backend) first invokes a sandbox preparation package (or backend) to establish the hermetic view and make stable absolute output paths visible inside the sandbox. Only then is the builder package (named via `:builder`) invoked inside that prepared environment. Sandbox policy and conventional environment setup (PATH, wrappers, etc.) are supplied primarily by the chosen builder package or its dependencies, not by the core or repeated in every derivation. This separation is a deliberate guardrail against core accretion.
 
@@ -142,7 +155,7 @@ The following records the substantive decisions and rationale that emerged from 
 
 **Sandbox preparation is a distinct pre-builder step**: The core invokes a sandbox preparation package (or backend) *before* the actual builder. The builder receives an already-prepared hermetic environment with promised stable output paths. Sandbox policy and output conventions are primarily supplied by the builder package (or a parent it extends), not repeated in every derivation.
 
-**Two-layer hashing**: Derivation hash (plan + inputs) vs. output hash (result). Promised paths are known before the builder runs.
+**Two-layer hashing**: Derivation hash (plan + inputs) vs. output hash (result). Promised paths are known before the builder runs. This distinction, present in the original purely functional deployment model, separates *what the plan is* (a content-addressed immutable description of the exact inputs and build recipe) from *what the build actually produced* (the bytes written to the promised location). Source-fetch derivations (and similar steps that must reach outside the sandbox) are ordinary derivations that declare an expected content hash up front and receive controlled impurity privileges (network access) in their sandbox policy. Their output is pinned by that declared hash. All downstream derivations consume them as normal specification inputs under `:inputs`. This is expressed uniformly through the multi-derivation graph and per-derivation sandbox policy rather than via a special "fixed-output derivation" kind in the core (Babix's deliberate improvement over the historical mechanism). The two-layer scheme still enables both perfect reproducibility of plans and practical caching of large artifacts.
 
 **Single primary output**: Derivations use one primary `out` (FHS layout inside). Composition across packages happens at activation/root time.
 
@@ -158,12 +171,14 @@ The following records the substantive decisions and rationale that emerged from 
 
 **Materialization before hash**: All reference discovery and replacement must be complete before the derivation hash is computed.
 
-**Builder Architecture Lessons (from prior art)**: Prior systems (notably Nixpkgs `stdenv` + `genericBuild` + its hook system, and Guix build systems) demonstrate that embedding a rich, centralized build model—phases, implicit hook mechanisms, generic runners, setup-hook sourcing, etc.—into the core or a single privileged package produces exactly the accumulated magic, hidden behavior, and maintenance burden that makes these tools painful.
+**Builder Architecture Lessons (from prior art)**: Prior systems (notably Nixpkgs `stdenv` + `genericBuild` + its hook system, and Guix build systems) demonstrate that embedding a rich, centralized build model—phases, implicit hook mechanisms, generic runners, setup-hook sourcing, etc.—into the core or a single privileged package produces exactly the accumulated magic, hidden behavior, and maintenance burden that makes these tools painful. The history of Nix itself shows how a small, clean functional core gradually accreted policy as more language ecosystems and edge cases were supported inside privileged constructs; the result is a trusted computing base that is larger and more opaque than necessary.
 
 Babix therefore keeps *all* build policy, phase models, hook systems, default build flows, and language-specific conventions strictly as ordinary packages in the collection. A generic phased builder may exist as a convenience that other builders can depend on, but:
 - It has no special status or privileges in the core.
 - Other builders may ignore it entirely and implement their own orchestration from scratch.
 - The core Derivation Description and Realization interfaces remain completely agnostic to any particular build model or convention.
+
+This is not merely an aesthetic preference for smallness; it is a direct lesson from the functional deployment literature: once policy lives in the core, it becomes nearly impossible to evolve or replace without forking, and every user pays the complexity tax even for use cases the policy was never intended to cover. By contrast, when builders, activators, and environment composers are ordinary packages, the collection can experiment aggressively while the trusted base stays minimal and stable.
 
 ### The Five Core Interfaces
 
@@ -223,13 +238,45 @@ Remaining higher-level risks and open questions include:
 
 - How far can the "users experience this as Babix, not Clojure" principle be taken when the primary representation is EDN data?
 - Can we design the derivation description and builder contract such that common language builders remain low-friction without re-introducing hidden behavior?
-- What is the minimal viable provenance model that still delivers on the "explain everything" promise?
+- What is the minimal viable provenance model that still delivers on the "explain everything" promise? (The 2025 large-scale nixpkgs reproducibility study released full build logs and diffoscopes for 86k+ unreproducible artifacts; this is a concrete existence proof of the kind of data `babix explain` should surface.)
 - How do we handle the bootstrap problem (building the initial package collection) and the initial package collection itself?
 - What does the user-facing project configuration and target declaration format actually look like for normal projects (the equivalent of `flake.nix` + `flake.lock` plus `babix init` output)?
 - Trust and distribution model for locked inputs and pre-built artifacts (even a minimal local-first story).
 - Detailed CLI surface, `babix explain` question catalog, and exact activator/collector composition contracts.
 
+### Provenance and Reproducibility at Scale
+
+The 2025 empirical study of nixpkgs (the largest cross-ecosystem FOSS distribution) rebuilt 709,816 packages from 17 historical snapshots spaced ~4 months apart (2017–2023). Key findings directly relevant to Babix:
+
+- Bitwise reproducibility ranged from 69% to 91%, with a clear upward trend despite continuous growth in package count.
+- Rebuildability (the ability to re-execute a historical plan and obtain a result) stayed above 99% across the entire period.
+- Approximately 15% of unreproducible failures were caused by embedded build dates; other recurring causes include uname output leakage, embedded environment variables, and non-deterministic build IDs (e.g., Go).
+- QA monitoring of a critical subset (the NixOS minimal ISO image) correlated with sustained >95% reproducibility rates — suggesting that active monitoring is an effective lever.
+- Most reproducibility fixes were incidental (side-effects of routine package updates) rather than intentional reproducibility work.
+
+These numbers validate the core claim of the purely functional deployment model: when every artifact's identity is a pure function of its exact inputs and the build is hermetically isolated, high reproducibility becomes an *emergent property at scale* rather than an unattainable ideal. Babix's provenance and `babix explain` ambitions are not speculative; they are the tooling layer on top of a model that has already been shown to work for >700k packages. The released dataset of logs and full recursive diffs (diffoscopes) is a model for the kind of explainable artifacts Babix should produce by default.
+
 See `docs/CONTEXT.md` (Key Decisions and Key Concepts sections) for the current authoritative stance and terminology. The interface documents in `docs/interfaces/` contain the detailed contracts.
+
+**Further reading** (foundational sources for the model Babix inherits):
+- Dolstra 2006 (PhD thesis) — the original formalization of the purely functional deployment model, closures, the historical fixed-output derivation mechanism (for source fetches), and reference scanning. Babix adopts the model but solves the fetch/impurity problem uniformly via ordinary derivations in a multi-derivation graph rather than a distinguished derivation kind.
+- Dolstra et al. JFP 2011 (NixOS paper) — the extension to full system configuration, the module system as a purely functional composition mechanism, and honest discussion of purity compromises required for real OS state.
+- Malka et al. MSR 2025 — the first large-scale empirical validation that the model delivers high bitwise reproducibility and near-perfect rebuildability in practice.
+- Schwaighofer, Roland, Mayrhofer (SCORED '24) — extensions for builder provenance, remote attestation, and dependency resolution outcome records to reduce transitive trust in decentralized/multi-builder settings (advanced provenance direction).
+
+**Advanced provenance: Builder attestation and transitive trust**
+
+Derivation-level provenance (locked inputs, chosen builder/activator packages, realization records) is powerful, but in a decentralized world with multiple independent builders, caches, or remote realization, consumers still face *transitive trust* in the builders themselves. Schwaighofer et al. (SCORED '24) show how to reduce this by attaching two kinds of verifiable metadata to the existing cryptographically secured trace map entries used by systems like Nix:
+
+- Builder provenance data: which concrete builder (package + attested software stack + remote attestation / measured boot evidence) performed the realization.
+- Record of dependency resolution outcome: not just the declared or pinned inputs, but evidence of what the builder actually resolved each of *its own* dependencies to at build time.
+
+This lets downstream parties apply their own trust policies at consumption or explanation time ("only accept builds from builders whose attested configuration excludes known-vulnerable packages", "require N-of-M agreement from builders I designate", etc.) rather than blindly inheriting trust in every upstream builder and cache.
+
+Babix's cross-cutting provenance requirement and the realization records produced by the Realization Interface should be designed to accommodate such richer attestation payloads as a future extension. This is particularly relevant for supply-chain security use cases and for any later horizon involving distributed or multi-builder realization. It does not change first-horizon core contracts, but it does argue for keeping realization provenance records extensible and for treating the choice of builder package as first-class observable data.
+
+Further reading for this direction:
+- Martin Schwaighofer, Michael Roland, René Mayrhofer. "Extending Cloud Build Systems to Eliminate Transitive Trust." *Proceedings of the 2024 Workshop on Software Supply Chain Offensive Research and Ecosystem Defenses (SCORED '24)*, ACM, 2024.
 
 ---
 

@@ -22,6 +22,8 @@ It is the Babix equivalent of `flake.nix` + `flake.lock` + the fetching mechanis
 - Lockfile records not just the revision, but the **reproducibility level** and dirty state.
 - No implicit Git behavior.
 
+Source modes are the ergonomic user declaration of how an external input should be materialized. In the classic model this mapped to a special "fixed-output derivation" kind. Babix achieves the same goal more uniformly: the source-fetch step is an ordinary derivation (with declared expected content hash and sandbox policy that permits the necessary network access). The lockfile records the exact resolved identity; materialization produces a normal store artifact. Downstream derivations (dependency installation step, final build, etc.) simply list that artifact as a specification input under `:inputs`, exactly like any other package. No special derivation kind is required in the core. This is part of Babix's deliberate improvement over the historical fixed-output mechanism while preserving the essential guarantees (pinned content hash, auditable impurity, reproducibility of the overall plan).
+
 ## Open Questions
 
 - What is the exact shape of an input declaration and the resulting lock entry?

@@ -1,7 +1,7 @@
 # Babix Vision
 
 **One-line thesis**  
-Babix brings the strongest ideas from Nix and Guix — content-addressed storage, reproducible derivations, explicit dependency graphs, and atomic environments — into a system whose surface is data-first, explainable by default, and built around Clojure-shaped composition rather than a custom language or accumulated folklore.
+Babix is a first-principles re-imagining of the *purely functional software deployment model* (Dolstra 2006) — the intellectual foundation of Nix — with a radically simpler, data-first surface. It preserves the hard guarantees (content-addressed immutable store, derivations as pure plans, explicit dependency graphs, hermetic realization, atomic environments, and strong provenance) while replacing the painful ergonomics (custom language with hostile errors, accumulated wrapper layers, implicit behavior, poor causality) with Clojure-shaped composition over plain EDN data. Empirical evidence shows the underlying model delivers high bitwise reproducibility at massive scale (69–91% across 710k+ historical builds, with >99% rebuildability), validating that the core ideas are sound; Babix's contribution is to make them usable without the folklore tax.
 
 ---
 
@@ -109,3 +109,8 @@ We will know Babix is working when:
 ---
 
 Babix exists because the hardest parts of reproducible systems are worth preserving, but the current experience of using them is not. We can do better. This is the attempt to prove it.
+
+**Further reading** (intellectual foundations)
+- Eelco Dolstra. *The Purely Functional Software Deployment Model*. PhD thesis, Utrecht University, 2006.
+- Dolstra, Löh, Pierron. "NixOS: A Purely Functional Linux Distribution." *J. Functional Programming*, 2010/2011.
+- Malka, Zacchiroli, Zimmermann. "Does Functional Package Management Enable Reproducible Builds at Scale? Yes." MSR 2025 (arXiv:2501.15919).

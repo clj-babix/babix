@@ -229,6 +229,8 @@ Detailed sandbox policy and output conventions are primarily supplied by the cho
 - Output hash: content hash of the actual result written to a promised output location.
 - Fixed-output cases (sources, vendored deps, etc.) are explicit derivation steps (or lightweight source entries) carrying an expected content hash + controlled-impurity allowance in their sandbox policy. They produce normal content-addressed inputs for downstream derivations.
 
+This is the escape hatch inherited from the purely functional deployment model: most of the build remains a pure function, while the small number of steps that must reach outside the sandbox (network fetches of source) are expressed as ordinary derivations that declare an expected content hash and receive scoped sandbox privileges. Babix uses the uniform multi-derivation graph approach (each step is a normal derivation; downstream steps take prior outputs as `:inputs`) rather than a special "fixed-output derivation" kind. See Dolstra 2006 for the original problem and mechanism; Babix's design is the deliberate uniform improvement.
+
 **Single primary output + FHS layout**
 
 Derivations declare a single primary `out` (plus logical siblings only when truly needed). Packages follow FHS-style layout inside `out` (`bin/`, `lib/`, `share/man/`, etc.). Composition of multiple packages into coherent roots/environments happens at activation time via activator packages, not by multiple outputs on every derivation.
