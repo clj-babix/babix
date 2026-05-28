@@ -45,12 +45,19 @@ Pluggable Backends (behind stable interfaces)
   - Store
           │
           ▼
+Stable Store Interface Library
+  - Concrete implementation of the Store Interface contract
+  - Reusable by alternate Babix implementations or tools in other languages
+          │
+          ▼
 Package Collection (the vast majority of logic)
   - Language builders (Cargo, Python, etc.)
   - Environment setup tools
   - Source fetchers, patchers, wrappers (as packages)
   - Higher-level templates and frameworks
 ```
+
+The **Stable Store Interface Library** is the concrete engineering boundary that reifies the Store Interface (and related contracts). Any Babix implementation, alternate runtime, or compatible tool can depend on this library for all store interaction while providing its own evaluation, realization orchestration, or user-experience layers. This keeps the interface contract independent of any one runtime or language.
 
 ### Core (Minimal Trusted Base)
 
@@ -104,13 +111,13 @@ These interfaces are the primary architectural boundaries. See the individual do
    The data contract for a build plan. Primarily plain EDN. Explicit about inputs (specification vs. categorized), builder and activator (referenced by keyword into the closed input set), sandbox requirements, and runtime environment expectations. Higher-level builders produce instances of this shape. No language-specific build knowledge or phase models live here.
 
 2. **Store Interface**  
-   Content-addressed, immutable storage with reference tracking and roots. The single source of truth for artifacts. Uses two-layer hashing (derivation hash for the plan, output hash for the result) and supports promised paths known before realization.
+   Content-addressed, immutable storage with reference tracking and roots. The single source of truth for artifacts. Uses two-layer hashing (derivation hash for the plan, output hash for the result) and supports promised paths known before realization. Content-addressed storage is the primary model from the outset; purely input-addressed paths are not foundational. Store permission and visibility policy (e.g., group readability, discovery resistance) is explicitly deferred and not part of the v1 core contract (see RFC 0097 review decision). The concrete implementation of this interface is provided by the Stable Store Interface Library.
 
 3. **Realization Interface**  
    The contract for sandboxed execution. The main pluggability point for different isolation mechanisms (landlock, bubblewrap, OS-specific, future). Realization first invokes sandbox preparation (to create the hermetic view and promised output paths) and only then the builder inside that environment.
 
 4. **Input Locking & Resolution Interface**  
-   Declaration and locking of external inputs with explicit source modes (`:worktree`, `:git-head`, `:archive`, `:path`, etc.). The flakes equivalent, designed for honesty, local ergonomics, and visible reproducibility level. No implicit Git behavior.
+   Declaration and locking of external inputs with explicit source modes (`:worktree`, `:git-head`, `:archive`, `:path`, etc.). The flakes equivalent, designed for honesty, local ergonomics, and visible reproducibility level. No implicit Git behavior. Babix is deliberately source-origin agnostic: the stable identity of any materialized source is the cryptographic content hash of what was fetched plus the locked derivation description that performed the fetch. Git-internal hashes are not part of the core identity model (see RFC 0133 review decision). Rev/tag resolution may occur at realization time as part of materialization, but the core does not privilege any particular upstream hashing scheme.
 
 5. **Environment Presentation Interface**  
    How store artifacts become runnable environments. Activation logic lives in activator packages (parallel to builders). A derivation can name an `:activator` (resolved via the input graph exactly like `:builder`). Activation is a first-class concern on *every* derivation, not a special case. This keeps the core tiny while allowing very different activation strategies (dev shell, home-manager-style, system-style, etc.) to be supplied as ordinary packages. Collector-style targets are ordinary derivations that compose activations from their inputs.
@@ -123,7 +130,7 @@ The locked form is the ground truth for the machine layer — hashing, realizati
 
 **Specification inputs vs. categorized inputs** are deliberately distinct. Specification inputs (under `:inputs`) form the closed scope of concrete package instances available to the derivation. Categorized inputs (`:build-inputs`, `:host-inputs`, `:propagated-host-inputs`) are references into that scope describing architectural and runtime roles. This separation keeps the input graph honest and supports future cross-compilation without collapsing concerns.
 
-**Two-layer hashing** is used throughout: a derivation hash (over the normalized description plus the identities of all locked specification inputs and sources) identifies the plan; an output hash (content hash of the bytes written to a promised location) identifies the actual result. Promised output paths are known before the builder runs. Source-fetch and vendoring steps are ordinary derivations (not a special "fixed-output" kind) that declare an expected content hash and are granted controlled sandbox privileges. They participate in the graph exactly like any other derivation: downstream derivations receive their outputs as specification inputs under `:inputs`. This uniform multi-derivation approach is Babix's improvement over the classic model's distinguished fixed-output derivation variant.
+**Two-layer hashing and content-addressed storage as primary model** is used throughout: a derivation hash (over the normalized description plus the identities of all locked specification inputs and sources) identifies the immutable plan; an output hash (content hash of the bytes written to a promised location) identifies the actual result. Babix adopts content-addressed storage as the primary model from the outset. Both the locked derivation description (the plan) and the actual produced content (the result) are identified by cryptographic hashes. Realisation records map plan identities to concrete content-addressed output paths and their dependency closures. Purely input-addressed (derivation-hash-only) paths are not used as a foundational path. This decision was made after review of RFC 62 and the long migration cost incurred by retrofitting CA onto an input-addressed base in prior systems. Babix takes the good parts of that work cleanly from day one. Promised output paths are known before the builder runs. Source-fetch and vendoring steps are ordinary derivations (not a special "fixed-output" kind) that declare an expected content hash and are granted controlled sandbox privileges. They participate in the graph exactly like any other derivation: downstream derivations receive their outputs as specification inputs under `:inputs`. This uniform multi-derivation approach is Babix's improvement over the classic model's distinguished fixed-output derivation variant.
 
 **Sandbox preparation is a distinct pre-builder step.** The core (or realization backend) first invokes a sandbox preparation package (or backend) to establish the hermetic view and make stable absolute output paths visible inside the sandbox. Only then is the builder package (named via `:builder`) invoked inside that prepared environment. Sandbox policy and conventional environment setup (PATH, wrappers, etc.) are supplied primarily by the chosen builder package or its dependencies, not by the core or repeated in every derivation. This separation is a deliberate guardrail against core accretion.
 
@@ -132,6 +139,8 @@ The locked form is the ground truth for the machine layer — hashing, realizati
 **Collectors are ordinary derivations.** A collector (home-style root, project environment, etc.) has the same shape as any other derivation: inputs, categories, optional builder and/or activator, outputs. Large roots and package namespaces can remain lazy at the graph level; per-derivation closure (full materialization and hashing) is required only for the specific derivations that are realized. A whole package collection may be supplied as a single specification input for ergonomics; only actually referenced members are materialized for a given derivation.
 
 **Unified small data-driven contracts** govern all pluggable capabilities the core invokes directly (builders, sandbox/isolator providers, activators). Each publishes a minimal static manifest (kind, namespace/name, entrypoint, contract version) plus a small per-kind payload. This keeps the core's invocation model tiny and uniform while allowing the package collection to evolve new capabilities without core changes.
+
+**Temporal advisories in derivation specifications** (RFC 0127 review decision): Derivation descriptions carry an optional mechanism for temporal advisories (deprecation, removal, security notes, "no longer recommended," etc.). These are placed directly in the specification so that `babix explain`, activators, and environment presentation can surface them to users. This addresses the temporal aspect of package health in a data-first way without requiring external databases.
 
 ### Detailed Decisions and Rationale from Design Sessions
 
@@ -160,6 +169,8 @@ The following records the substantive decisions and rationale that emerged from 
 **Single primary output**: Derivations use one primary `out` (FHS layout inside). Composition across packages happens at activation/root time.
 
 **No centralized build monolith**: There is no privileged `genericBuild` / phase runner / hook system in the core. All such logic lives in ordinary builder packages.
+
+**Explicit rejection of plan dynamism / computed derivations** (RFC 0092 review decision): Babix rejects the model in which a derivation can dynamically produce new derivation descriptions that then become new build goals. Instead, Babix uses a deliberate inversion: if a workflow would have required "a derivation that produces a derivation," the inner derivation is produced first as an ordinary step, and its output is supplied as a specification input to the subsequent ordinary derivation. Multi-derivation specifications (e.g., source-fetch → dependency-vendor → build) already solve this class of problems completely. The core never has to treat a derivation's output as a new plan to be scheduled. This keeps evaluation, hashing, and realization semantics simple and uniform. All steps remain ordinary derivations; there is no distinguished "plan-producing" kind.
 
 **Unified small contracts for pluggables**: Builders, sandbox/isolator providers, and activators present small, stable, data-driven manifests (common envelope + per-kind payload) so the core can invoke them uniformly.
 

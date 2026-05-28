@@ -62,6 +62,11 @@ The process of turning a locked derivation description into actual store artifac
 **Store**:
 The globally unique, content-addressed, immutable storage layer shared by everyone participating in the Babix ecosystem (the equivalent of /nix/store). It is the single source of truth for all built artifacts (packages), their provenance, and the capability manifests they publish. Anyone can pull existing packages from the store and push newly realized ones into it. All dependencies — including builders, activators, and other capability providers — must be drawn from the store as realized packages. The store enables safe sharing, deduplication, reference tracking, and provenance across machines and time.
 
+Babix adopts content-addressed storage as the primary model from the outset: the derivation hash identifies the immutable plan (locked description + input identities), while the output identity is the cryptographic content hash of the actual bytes produced. Realisation records (or their Babix equivalent) map plan identities to concrete content-addressed paths and their dependency closures. Input-only (purely derivation-hash-based) addressing is not used as a foundational path.
+
+**Stable Store Interface Library**:
+A stable, versioned library (initially implemented in Clojure) whose sole responsibility is to provide the concrete implementations of the Babix Store Interface (and related contracts) for interacting with any store that satisfies the interface. Alternate Babix implementations, higher-level tools, or even implementations in other languages can depend on this library for all store interaction while providing their own evaluation, realization orchestration, or user experience layers. The library is the engineering boundary that keeps the Store Interface contract independent of any particular Babix runtime.
+
 **Package**:
 A realized output (or set of outputs) of a Derivation that has been materialized into the Store under a content address. Packages are the things that participate in the dependency graph. A package may provide capabilities (as a Builder, Activator, or other kind) by publishing a manifest in its store outputs. When a downstream derivation depends on a package, it references a specific store identity (ultimately a derivation hash plus output name) under its Specification Inputs. The Package Collection produces packages; the Store holds them.
 
@@ -101,6 +106,30 @@ Verifiable metadata attached to realization records or trace map entries that re
 
 **Binary Cache** (future / deferred concern):
 A remote service or content-addressed store that serves pre-realized outputs (store artifacts) so that clients can fetch them instead of realizing derivations locally. In the current horizon Babix is intentionally local-first; remote binary caches and the full distributed trust model for them are explicitly out of scope (see PRD.md). When support is added later, the provenance, realization records, and (advanced) builder attestation mechanisms must allow consumers to verify that a cached artifact was produced under conditions they consider acceptable, rather than having to transitively trust the cache or its upstream builders. See also the Store Interface (initial local semantics) and the SCORED '24 paper on eliminating transitive trust in cloud build systems.
+
+---
+
+## Decisions from RFC Review (2026)
+
+These decisions were recorded after systematic review of the Nix RFC corpus (particularly RFC 62 on content-addressed paths, RFC 0134 on store layering, RFC 0133 on Git hashing, RFC 0097 on store permissions, RFC 0127 on structured problems, RFC 0032 on phase UX, RFC 0092 on plan dynamism, and RFC 0140 on package paths). They codify stances that align with Babix's core principles.
+
+**Content-addressed storage as primary model**:
+Babix commits to content-addressed storage as the primary and foundational model. Both the locked derivation description (plan) and the actual produced content (result) are identified by cryptographic hashes. The derivation hash names the immutable plan; the output identity is the content hash of the bytes written to the promised location. Purely input-addressed (derivation-hash-only) paths are not used as a foundational path. Realisation records map plan identities to concrete content-addressed outputs and their closures. This decision was made after reviewing RFC 62 and the long migration cost Nix incurred by retrofitting CA onto an input-addressed base. Babix adopts the good parts of that work from day one without the compatibility tax.
+
+**Stable Store Interface Library**:
+The Store Interface (and related contracts) is reified as a stable, versioned library whose only job is to implement the interactions required by the interface. Any Babix implementation, alternate runtime, or even a tool written in another language can depend on this library to talk to any store that satisfies the Babix Store contract. This is a deliberate engineering boundary (inspired by RFC 0134) that keeps the interface independent of any one runtime or language. Concrete term: "Stable Store Interface Library."
+
+**Source origin agnosticism and content-hash primacy**:
+Babix remains deliberately agnostic to the upstream origin of source material. When materializing content from Git (or any other source), the stable identity that matters is the cryptographic hash of the actual bytes materialized plus the locked derivation description that performed the fetch. Git-internal hashes (blob, tree, commit) are not part of the core identity model. Rev/tag resolution can occur at realization time as part of materialization, but the core does not privilege Git's hashing scheme. This follows directly from the content-addressed primary model and the desire to avoid baking any particular upstream format into the trusted base (see Input Locking & Resolution Interface).
+
+**Store permission and visibility policy is deferred**:
+Decisions about specific on-disk permissions for the store (e.g., 1735-style, group readability, discovery resistance via `o-r`, etc.) are explicitly deferred. The Store Interface does not encode a particular permission or visibility model in v1. Implementations may choose safe defaults on creation, but the policy is not part of the core contract. This was recorded after review of RFC 0097; the topic remains open for later horizons.
+
+**Temporal advisories in derivation specifications**:
+Derivation descriptions carry an optional mechanism for temporal advisories (deprecation, removal, security notes, "no longer recommended," etc.). These are placed directly in the specification so that `babix explain`, activators, and environment presentation can surface them to users without requiring external databases or side channels. This addresses the temporal aspect of package health in a data-first way (inspired by structured problem reporting in RFC 0127, adapted to Babix's derivation-centric model).
+
+**Explicit rejection of plan dynamism / computed derivations**:
+Babix rejects the model in which a derivation can dynamically produce new derivation descriptions that then become new build goals (see RFC 0092). Instead, Babix uses an inversion: any step that would have required a "derivation that produces a derivation" is expressed as a prior ordinary derivation whose output is supplied as a specification input to a subsequent ordinary derivation. Multi-derivation graphs (e.g., source-fetch → dependency-vendor → build) already solve this class of problems. The core never has to treat a derivation's output as a new plan to be scheduled. This keeps evaluation, hashing, and realization semantics simple and uniform. All steps remain ordinary derivations; there is no distinguished "plan-producing" kind.
 
 ---
 

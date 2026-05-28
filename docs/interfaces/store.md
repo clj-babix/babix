@@ -20,7 +20,7 @@ Babix must have a real store (not just an artifact cache) if it wants to deliver
 ## Key Properties (Non-Negotiable)
 
 - **Immutability**: Once a store path exists, its contents never change.
-- **Content addressing**: Store paths are derived from the hash of their inputs + build process (or equivalent).
+- **Content addressing as primary model**: Babix adopts content-addressed storage as the primary and foundational model from the outset. The derivation hash identifies the immutable plan (the locked derivation description plus all input identities). The output identity is the cryptographic content hash of the actual bytes written to the promised location during realization. Realisation records (or the Babix equivalent) map plan identities to concrete content-addressed output paths and their dependency closures. Purely input-addressed (derivation-hash-only) paths are not used as a foundational path. This decision was made after review of RFC 62 and the long migration cost incurred by retrofitting CA onto an input-addressed base in prior systems. Babix takes the good parts of that work cleanly from day one.
 - **Reference tracking**: The store knows which paths reference which other paths.
 - **Roots as first-class concept**: Garbage collection only collects paths that are unreachable from active roots.
 - **Atomic realization**: A derivation either fully succeeds into the store or leaves no partial state.
@@ -42,15 +42,17 @@ For the current focus (nix-develop-like + derivations + locking):
 - How much of the "generation" concept lives in the Store vs. the Environment Presentation layer?
 - Trust model: how do we validate that a store path really was built from the claimed inputs when it comes from a remote source?
 
-### Two-Layer Hashing Model (captured from design sessions)
+### Two-Layer Hashing Model and Content-Addressed Storage as Primary Model (captured from design sessions)
 
 Store paths use two distinct hashes for clarity and caching:
 
-- **Derivation hash**: A deterministic hash over the normalized Derivation Description + the hashes/identities of all its locked specification inputs and sources. This identifies the *plan* to produce something. Any change to the description or any input produces a new derivation hash (and thus new output paths).
+- **Derivation hash**: A deterministic hash over the normalized Derivation Description + the hashes/identities of all its locked specification inputs and sources. This identifies the *immutable plan*. Any change to the description or any input produces a new derivation hash (and thus new output paths).
 
-- **Output hash**: The content hash of the actual bytes written to a particular promised output location during realization. This is what ends up in the final immutable store path for that output.
+- **Output hash**: The cryptographic content hash of the actual bytes written to a particular promised output location during realization. This is what ends up in the final immutable store path for that output and serves as the primary identity of the artifact.
 
-Fixed-output derivations (sources, vendored dependency trees, etc.) carry a pre-declared expected content hash. Their output hash can be that declared hash. They participate in the derivation hash of anything that consumes them, while still being independently cacheable by content.
+Babix adopts content-addressed storage as the primary model from the outset. Both the locked derivation description (the plan) and the actual produced content (the result) are identified by cryptographic hashes. Realisation records map plan identities to concrete content-addressed output paths and their dependency closures. Purely input-addressed (derivation-hash-only) paths are not used as a foundational path. This decision was made after review of RFC 62 and the long migration cost incurred by retrofitting CA onto an input-addressed base in prior systems. Babix takes the good parts of that work cleanly from day one.
+
+Fixed-output-style steps (sources, vendored dependency trees, etc.) are expressed as ordinary derivations that declare an expected content hash up front and receive controlled sandbox privileges for the necessary impurity (network). Their output is pinned by that declared content hash. They participate in the derivation hash of anything that consumes them, while still being independently cacheable by content.
 
 The sandbox preparation step makes the final store paths (derived from derivation hash + output name) visible as stable absolute paths before the builder runs. The builder writes into them; the Store later registers the contents under the output-hash-based name (or re-uses the path if it matches).
 
@@ -69,7 +71,12 @@ This supports the reproducibility pillar and Spec-ulation-style stability: outpu
 - Implementing a full NixOS-style system profile with generations and atomic switch for `/`.
 - Sophisticated distributed or multi-tenant store semantics.
 - Built-in binary cache serving (can be a separate package or service later).
+- Encoding specific on-disk permission or visibility policies (e.g., group readability, discovery resistance via `o-r`, 1735-style defaults) into the core Store contract. Permission and visibility policy is explicitly deferred and is the concern of the concrete store implementation or a higher policy layer (recorded after review of RFC 0097).
+
+## The Stable Store Interface Library
+
+The concrete implementation of this interface (and related store-interaction contracts) is provided by the **Stable Store Interface Library**. This is a stable, versioned library whose sole responsibility is to implement the interactions required by the Babix Store Interface. Any Babix implementation, alternate runtime, higher-level tool, or even a tool written in another language can depend on this library for all store interaction while providing its own evaluation, realization orchestration, or user-experience layers. The library is the engineering boundary that keeps the Store Interface contract independent of any one runtime or language (inspired by RFC 0134 store-layer thinking, expressed in concrete terms without buzzwords).
 
 ---
 
-This interface is deliberately minimal on the surface but carries enormous weight. Getting the contracts for roots, references, and atomicity right will determine whether higher layers can deliver on the "reproducible systems" promise.
+This interface is deliberately minimal on the surface but carries enormous weight. Getting the contracts for roots, references, atomicity, and content-addressed realisation records right will determine whether higher layers can deliver on the "reproducible systems" promise.

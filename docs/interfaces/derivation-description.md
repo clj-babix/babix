@@ -92,7 +92,21 @@ A derivation is a map with the following responsibilities. Exact field names and
  :meta
  {:homepage "..."
   :license "MIT"
-  :maintainers [...]}}
+  :maintainers [...]}
+
+ ;; Optional temporal advisories (deprecation, removal, security notes,
+ ;; "no longer recommended", etc.). These are placed directly in the
+ ;; derivation specification so that `babix explain`, activators, and
+ ;; environment presentation can surface them to users. This addresses
+ ;; the temporal aspect of package health in a data-first way.
+ ;; (Recorded after review of structured problem reporting approaches
+ ;; such as RFC 0127, adapted to Babix's derivation-centric model.)
+ :advisories
+ [{:kind "deprecated"
+   :message "This package depends on Python 2, which has reached end of life."
+   :since "2026-01"
+   :urls ["https://..."]}
+  ...]}
 ```
 
 ## What Must Be Explicit
@@ -258,7 +272,9 @@ There is no centralized phase model, hook system, or genericBuild equivalent in 
 - Service configuration or system state (modules are out of scope for the current focus).
 - Full system activation and generations for root-owned targets.
 
-See `docs/CONTEXT.md` for the current authoritative stance on in-place materialization, stable identifiers, specification vs. categorized inputs, two-layer hashing, single primary `out`, and the absence of any privileged genericBuild or hook system in the core.
+See `docs/CONTEXT.md` for the current authoritative stance on in-place materialization, stable identifiers, specification vs. categorized inputs, two-layer hashing, single primary `out`, the absence of any privileged genericBuild or hook system in the core, and the explicit rejection of plan dynamism / computed derivations (RFC 0092 review decision).
+
+Temporal advisories (`:advisories`) are intentionally lightweight and advisory-only in this interface. Enforcement, UI presentation, and policy (error vs. warn vs. ignore) are the concern of higher layers (activators, `babix explain`, package collection tooling).
 
 ---
 
