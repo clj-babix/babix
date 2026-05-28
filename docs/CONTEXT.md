@@ -111,25 +111,46 @@ A remote service or content-addressed store that serves pre-realized outputs (st
 
 ## Decisions from RFC Review (2026)
 
-These decisions were recorded after systematic review of the Nix RFC corpus (particularly RFC 62 on content-addressed paths, RFC 0134 on store layering, RFC 0133 on Git hashing, RFC 0097 on store permissions, RFC 0127 on structured problems, RFC 0032 on phase UX, RFC 0092 on plan dynamism, and RFC 0140 on package paths). They codify stances that align with Babix's core principles.
+These decisions were recorded after systematic review of the Nix RFC corpus. They codify stances that align with Babix's core principles. The review considered (among others):
+
+- [RFC 62](https://github.com/NixOS/rfcs/blob/master/rfcs/0062-content-addressed-paths.md) — content-addressed paths
+- [RFC 0134](https://github.com/NixOS/rfcs/blob/master/rfcs/0134-nix-store-layer.md) — store layering
+- [RFC 0133](https://github.com/NixOS/rfcs/blob/master/rfcs/0133-git-hashing.md) — Git hashing
+- [RFC 0097](https://github.com/NixOS/rfcs/blob/master/rfcs/0097-no-read-store-dir.md) — store permissions
+- [RFC 0127](https://github.com/NixOS/rfcs/blob/master/rfcs/0127-issues-warnings.md) — structured problems
+- [RFC 0032](https://github.com/NixOS/rfcs/blob/master/rfcs/0032-run-phase-changes-for-better-nix-shell-use.md) — phase UX for development environments
+- [RFC 0092](https://github.com/NixOS/rfcs/blob/master/rfcs/0092-plan-dynamism.md) — plan dynamism
+- [RFC 0140](https://github.com/NixOS/rfcs/blob/master/rfcs/0140-simple-package-paths.md) — package path ergonomics
+
+Each decision below notes the relevant RFC(s) with a direct link.
 
 **Content-addressed storage as primary model**:
-Babix commits to content-addressed storage as the primary and foundational model. Both the locked derivation description (plan) and the actual produced content (result) are identified by cryptographic hashes. The derivation hash names the immutable plan; the output identity is the content hash of the bytes written to the promised location. Purely input-addressed (derivation-hash-only) paths are not used as a foundational path. Realisation records map plan identities to concrete content-addressed outputs and their closures. This decision was made after reviewing RFC 62 and the long migration cost Nix incurred by retrofitting CA onto an input-addressed base. Babix adopts the good parts of that work from day one without the compatibility tax.
+Babix commits to content-addressed storage as the primary and foundational model. Both the locked derivation description (plan) and the actual produced content (result) are identified by cryptographic hashes. The derivation hash names the immutable plan; the output identity is the content hash of the bytes written to the promised location. Purely input-addressed (derivation-hash-only) paths are not used as a foundational path. Realisation records map plan identities to concrete content-addressed outputs and their closures.
+
+The stance was informed by designs explored in the broader ecosystem, including [RFC 62](https://github.com/NixOS/rfcs/blob/master/rfcs/0062-content-addressed-paths.md) ("Simple content-addressed store paths"). Babix adopts the approach cleanly from day one without the compatibility tax that came from retrofitting it onto an input-addressed foundation.
 
 **Stable Store Interface Library**:
-The Store Interface (and related contracts) is reified as a stable, versioned library whose only job is to implement the interactions required by the interface. Any Babix implementation, alternate runtime, or even a tool written in another language can depend on this library to talk to any store that satisfies the Babix Store contract. This is a deliberate engineering boundary (inspired by RFC 0134) that keeps the interface independent of any one runtime or language. Concrete term: "Stable Store Interface Library."
+The Store Interface (and related contracts) is reified as a stable, versioned library whose only job is to implement the interactions required by the interface. Any Babix implementation, alternate runtime, or even a tool written in another language can depend on this library to talk to any store that satisfies the Babix Store contract. This is a deliberate engineering boundary that keeps the interface independent of any one runtime or language. Concrete term: "Stable Store Interface Library."
+
+The framing was informed by work on store layering in the ecosystem, including [RFC 0134](https://github.com/NixOS/rfcs/blob/master/rfcs/0134-nix-store-layer.md) ("nix-store-layer").
 
 **Source origin agnosticism and content-hash primacy**:
 Babix remains deliberately agnostic to the upstream origin of source material. When materializing content from Git (or any other source), the stable identity that matters is the cryptographic hash of the actual bytes materialized plus the locked derivation description that performed the fetch. Git-internal hashes (blob, tree, commit) are not part of the core identity model. Rev/tag resolution can occur at realization time as part of materialization, but the core does not privilege Git's hashing scheme. This follows directly from the content-addressed primary model and the desire to avoid baking any particular upstream format into the trusted base (see Input Locking & Resolution Interface).
 
 **Store permission and visibility policy is deferred**:
-Decisions about specific on-disk permissions for the store (e.g., 1735-style, group readability, discovery resistance via `o-r`, etc.) are explicitly deferred. The Store Interface does not encode a particular permission or visibility model in v1. Implementations may choose safe defaults on creation, but the policy is not part of the core contract. This was recorded after review of RFC 0097; the topic remains open for later horizons.
+Decisions about specific on-disk permissions for the store (e.g., 1735-style, group readability, discovery resistance via `o-r`, etc.) are explicitly deferred. The Store Interface does not encode a particular permission or visibility model in v1. Implementations may choose safe defaults on creation, but the policy is not part of the core contract. The topic remains open for later horizons.
+
+The question was surfaced during review of [RFC 0097](https://github.com/NixOS/rfcs/blob/master/rfcs/0097-no-read-store-dir.md) ("nix-store-perms").
 
 **Temporal advisories in derivation specifications**:
-Derivation descriptions carry an optional mechanism for temporal advisories (deprecation, removal, security notes, "no longer recommended," etc.). These are placed directly in the specification so that `babix explain`, activators, and environment presentation can surface them to users without requiring external databases or side channels. This addresses the temporal aspect of package health in a data-first way (inspired by structured problem reporting in RFC 0127, adapted to Babix's derivation-centric model).
+Derivation descriptions carry an optional mechanism for temporal advisories (deprecation, removal, security notes, "no longer recommended," etc.). These are placed directly in the specification so that `babix explain`, activators, and environment presentation can surface them to users without requiring external databases or side channels. This addresses the temporal aspect of package health in a data-first way.
+
+The approach was informed by structured problem-reporting designs, including [RFC 0127](https://github.com/NixOS/rfcs/blob/master/rfcs/0127-issues-warnings.md) ("Nixpkgs 'problem' infrastructure").
 
 **Explicit rejection of plan dynamism / computed derivations**:
-Babix rejects the model in which a derivation can dynamically produce new derivation descriptions that then become new build goals (see RFC 0092). Instead, Babix uses an inversion: any step that would have required a "derivation that produces a derivation" is expressed as a prior ordinary derivation whose output is supplied as a specification input to a subsequent ordinary derivation. Multi-derivation graphs (e.g., source-fetch → dependency-vendor → build) already solve this class of problems. The core never has to treat a derivation's output as a new plan to be scheduled. This keeps evaluation, hashing, and realization semantics simple and uniform. All steps remain ordinary derivations; there is no distinguished "plan-producing" kind.
+Babix rejects the model in which a derivation can dynamically produce new derivation descriptions that then become new build goals. Instead, Babix uses an inversion: any step that would have required a "derivation that produces a derivation" is expressed as a prior ordinary derivation whose output is supplied as a specification input to a subsequent ordinary derivation. Multi-derivation graphs (e.g., source-fetch → dependency-vendor → build) already solve this class of problems. The core never has to treat a derivation's output as a new plan to be scheduled. This keeps evaluation, hashing, and realization semantics simple and uniform. All steps remain ordinary derivations; there is no distinguished "plan-producing" kind.
+
+The inversion was chosen after considering dynamic plan models explored in the ecosystem, including [RFC 0092](https://github.com/NixOS/rfcs/blob/master/rfcs/0092-plan-dynamism.md) ("plan-dynamism-experiment").
 
 ---
 
