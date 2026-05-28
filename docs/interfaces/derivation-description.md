@@ -216,22 +216,20 @@ There is no privileged `genericBuild`, phase runner, or hook system in the core 
 
 Authoring forms (including multi-derivation files and references inside builder data) may use convenient references (plain keywords, namespaced maps, whole namespaces under `:inputs`, etc.).
 
-Before the derivation hash is computed, a full static walk discovers all references. In the locked/closed Derivation Description:
+Before the derivation hash is computed, a full static walk over the Derivation Description is used to discover which references are actually used (including inside strings and builder-private data), so that unused inputs can be pruned. In the locked/closed Derivation Description, *only the `:inputs` section* is replaced in-place with stable identifiers (each entry becomes a dereferenced form of shape `{:ref <keyword> :id <store-identity>}` or equivalent). References that appear elsewhere in the description — in categorized input lists (`:build-inputs`, etc.), as the value of `:builder` or `:activator`, inside strings, or in any other body data — remain as keywords that point into the now-pinned `:inputs` map. The keyword that appears as the value of `:builder` or `:activator` itself is never replaced; only the corresponding entry under `:inputs` is turned into the dereferenced form.
 
-- Every reference is replaced *in-place* with a stable identifier.
-- The recommended shape for the identifier is a small map that includes the original reference name for readability and to allow the surrounding structure (categorized lists, builder data, etc.) to remain unchanged in shape:
+The recommended shape for the dereferenced form (inside `:inputs`) is a small map that preserves the original reference name for readability:
 
   ```clojure
-  {:name "my-package-source"           ; the original logical/reference name
-   :derivation-hash "sha256-..."       ; primary stable identity
-   ;; optionally :output "out"
-   ;; optionally :store-path "/store/..." (derived, not required for identity)
-   }
+  {:ref :babix.builders/python
+   :id "sha256-..."}
   ```
 
-- This preserves the data shape between authoring and locked forms.
-- The locked form is fully explicit and self-contained; the hash is computed over it.
+- This keeps the capability selection visible as a named choice while still pinning the exact package chosen.
+- The locked form is fully explicit and self-contained for the inputs that are actually referenced; the hash is computed over the Canonical Locked Form.
 - Higher-level tooling and language builders provide ergonomic authoring surfaces; the core only ever sees the explicit locked artifacts.
+
+See the "Stable Identifier" and "Canonical Locked Form" entries in [docs/CONTEXT.md](docs/CONTEXT.md) for the authoritative rule.
 
 **Sandbox preparation and output promises**
 
@@ -239,11 +237,11 @@ Detailed sandbox policy and output conventions are primarily supplied by the cho
 
 **Two-layer hashing and fixed-output**
 
-- Derivation hash: deterministic over normalized description + hashes of all locked specification inputs/sources.
-- Output hash: content hash of the actual result written to a promised output location.
-- Fixed-output cases (sources, vendored deps, etc.) are explicit derivation steps (or lightweight source entries) carrying an expected content hash + controlled-impurity allowance in their sandbox policy. They produce normal content-addressed inputs for downstream derivations.
+- Derivation hash: deterministic over the Canonical Locked Form (after inputs-only materialization and deterministic serialization).
+- Output hash (CAS identity for a realized `out`): cryptographic hash computed over *both* the Canonical Locked Form bytes of the producing derivation *and* the actual bytes written to the promised output location. The hashes or regular store paths of input dependencies are not part of this output content hash; those relationships live only in the Merkle-DAG of plans (parent derivation hashes inside the Canonical Locked Forms).
+- Fixed-output-style cases (sources, vendored deps, etc.) are ordinary derivation steps carrying an expected content hash + controlled-impurity allowance in their sandbox policy. They produce normal content-addressed inputs for downstream derivations.
 
-This is the escape hatch inherited from the purely functional deployment model: most of the build remains a pure function, while the small number of steps that must reach outside the sandbox (network fetches of source) are expressed as ordinary derivations that declare an expected content hash and receive scoped sandbox privileges. Babix uses the uniform multi-derivation graph approach (each step is a normal derivation; downstream steps take prior outputs as `:inputs`) rather than a special "fixed-output derivation" kind. See Dolstra 2006 for the original problem and mechanism; Babix's design is the deliberate uniform improvement.
+This is the escape hatch inherited from the purely functional deployment model: most of the build remains a pure function (the Canonical Locked Form plus the Merkle-DAG), while the small number of steps that must reach outside the sandbox (network fetches of source) are expressed as ordinary derivations that declare an expected content hash and receive controlled sandbox privileges. Their output is pinned by the combined (plan + content) hash. Downstream derivations consume them as normal specification inputs under `:inputs`. Babix uses the uniform multi-derivation graph approach rather than a distinguished "fixed-output derivation" kind in the core. The model also enables practical caching of expensive content hashing (when the Canonical Locked Form is already known, previously materialized local content with a matching hash can be trusted without re-computation, with an explicit bust-cache escape). See Dolstra 2006 for the original problem and mechanism; Babix's design is the deliberate uniform improvement.
 
 **Single primary output + FHS layout**
 
