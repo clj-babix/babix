@@ -60,6 +60,12 @@ The sandbox preparation step makes the final store paths (derived from derivatio
 
 This supports the reproducibility pillar and Spec-ulation-style stability: output paths are knowable and stable once the locked inputs + description exist.
 
+**Bootstrap / Trust Anchor precondition**
+
+The store's first contents are produced by a bootstrap process that ultimately depends on the presence of the host kernel (with its syscall ABI) plus a minimal bootstrap seed (the ~229-byte hex0-seed or equivalent host-environment assumption). The seed is not a derivation and lies outside the Merkle-DAG; its hash is the ultimate stable identifier and the leaf from which the first realized packages (including the first "babix" binary and the first builder/activator packages) are grown.
+
+The seed is a pure assembler: it reads hex digits, labels, and comments from a source file and emits the corresponding flat machine code. It is the only pre-compiled artifact in the chain; everything above it is built from source in a fully auditable 15-phase ladder. Verification uses content-hash pinning: the seed is executed as the builder of a derivation whose output hash must match the seed's own hash exactly. Any tampering produces a detectable mismatch. The Stable Store Interface Library must ultimately be realizable from a bootstrapped toolchain.
+
 ## Relationship to Other Interfaces
 
 - **Derivation Description**: Derivations compute the store paths they will produce (via two-layer hashing: derivation hash for the plan, output hash for the result). Promised paths are known before realization.

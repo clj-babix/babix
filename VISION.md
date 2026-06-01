@@ -93,6 +93,7 @@ A real, production-grade replacement for the combination of `nix develop` + flak
 - A powerful but simpler module system.
 - First-class support for system-level targets (BabixOS ambitions).
 - Rich higher-level frameworks built on the solid core.
+- Credible bootstrap story for the first working `babix` binary and initial package collection on a machine that has nothing. The current best-known path begins with a single ~229-byte hex0-seed (181 bytes of machine code plus a 48-byte ELF header) — the only pre-compiled artifact in the chain. It is a pure assembler (hex digits, labels, and comments in, flat machine code out). Everything above it is built from source in a fully auditable 15-phase ladder. Verification uses content-hash pinning (the seed is executed as the builder of a derivation whose output hash must match the seed's own hash exactly). The seed is a host-environment assumption (analogous to the kernel and syscall ABI), not a derivation and not a Builder package; its hash is the ultimate stable identifier and the leaf outside the Merkle-DAG. A pragmatic cross-build from an existing Nix/Guix system is acceptable for the first horizon. A true stage0-style self-hosting bootstrap (a babix-seed that can itself be built entirely inside a Babix store) is the long-term "strong sense" answer. The design must not preclude it.
 
 We do not version the system. We have Babix. It grows and improves, but we do not ship "Babix 0.1" as a temporary placeholder we intend to replace.
 
